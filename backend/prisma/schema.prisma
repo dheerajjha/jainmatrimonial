@@ -1,0 +1,75 @@
+// Prisma schema for Jain Matrimony
+// Compatible with PostgreSQL and Supabase
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(uuid())
+  phoneNumber   String    @unique @map("phone_number")
+  role          String    // 'parent', 'self', 'admin'
+  isVerified    Boolean   @default(false) @map("is_verified")
+  otpCode       String?   @map("otp_code")
+  otpExpiresAt  DateTime? @map("otp_expires_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  parentProfiles Profile[] @relation("ParentProfiles")
+  childProfiles  Profile[] @relation("ChildProfiles")
+
+  @@map("users")
+}
+
+model Profile {
+  id          String   @id @default(uuid())
+  profileCode String   @unique @map("profile_code") // 6-character code
+
+  // Relations
+  parentUserId String? @map("parent_user_id")
+  parent       User?   @relation("ParentProfiles", fields: [parentUserId], references: [id])
+
+  childUserId  String? @map("child_user_id")
+  child        User?   @relation("ChildProfiles", fields: [childUserId], references: [id])
+
+  // Basic Details (filled by parent)
+  parentName         String?  @map("parent_name")
+  relation           String?  // 'father', 'mother', 'guardian'
+  parentContact      String?  @map("parent_contact")
+  childFullName      String?  @map("child_full_name")
+  childGender        String?  @map("child_gender") // 'male', 'female'
+  dateOfBirth        DateTime? @map("date_of_birth")
+  city               String?
+  basicEducation     String?  @map("basic_education")
+
+  // Advanced Details (filled by child)
+  lifeGoals          String?  @map("life_goals") @db.Text
+  travelledPlaces    String[] @map("travelled_places")
+  education          String?
+  profession         String?
+  currentCity        String?  @map("current_city")
+  religiousPractice  String?  @map("religious_practice") // 'strict', 'moderate', 'flexible'
+  foodHabits         String?  @map("food_habits") // 'strict_jain', 'vegan', 'vegetarian'
+  familyDetails      String?  @map("family_details") @db.Text
+
+  // Profile Status
+  status        String   @default("draft") // 'draft', 'pending_completion', 'active', 'inactive'
+  shareableLink String?  @map("shareable_link")
+
+  // Timestamps
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  completedAt   DateTime? @map("completed_at")
+
+  @@map("profiles")
+  @@index([profileCode])
+  @@index([parentUserId])
+  @@index([childUserId])
+  @@index([status])
+}
