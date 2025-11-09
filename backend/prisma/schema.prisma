@@ -58,6 +58,9 @@ model Profile {
   foodHabits         String?  @map("food_habits") // 'strict_jain', 'vegan', 'vegetarian'
   familyDetails      String?  @map("family_details") @db.Text
 
+  // Photos
+  photos             String[] @default([]) // Array of photo URLs/paths
+
   // Profile Status
   status        String   @default("draft") // 'draft', 'pending_completion', 'active', 'inactive'
   shareableLink String?  @map("shareable_link")

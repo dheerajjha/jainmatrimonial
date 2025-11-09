@@ -1,9 +1,12 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import '../theme/app_theme.dart';
 import '../models/profile.dart';
 import '../services/api_service.dart';
+import '../services/storage_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -16,12 +19,25 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Profile> _profiles = [];
   bool _isLoading = true;
   String? _errorMessage;
+
+  // Search and filter state
+  final TextEditingController _searchController = TextEditingController();
   String _selectedGender = 'All';
+  String _selectedCity = '';
+  String _selectedEducation = '';
+  int? _minAge;
+  int? _maxAge;
 
   @override
   void initState() {
     super.initState();
     _loadProfiles();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadProfiles() async {
@@ -31,20 +47,52 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     try {
-      final response = await ApiService.getAllProfiles();
+      // Build query parameters
+      final Map<String, String> params = {};
 
-      if (response['success'] == true) {
-        final profilesData = response['profiles'] as List;
+      if (_selectedGender != 'All') {
+        params['gender'] = _selectedGender;
+      }
+      if (_selectedCity.isNotEmpty) {
+        params['city'] = _selectedCity;
+      }
+      if (_selectedEducation.isNotEmpty) {
+        params['education'] = _selectedEducation;
+      }
+      if (_minAge != null) {
+        params['minAge'] = _minAge.toString();
+      }
+      if (_maxAge != null) {
+        params['maxAge'] = _maxAge.toString();
+      }
+      if (_searchController.text.isNotEmpty) {
+        params['search'] = _searchController.text;
+      }
+
+      // Build URL with query parameters
+      final baseUrl = ApiService.baseUrl;
+      final uri = Uri.parse('$baseUrl/profiles');
+      final urlWithParams = uri.replace(queryParameters: params);
+
+      final response = await http.get(
+        urlWithParams,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ${await StorageService.getToken()}',
+        },
+      );
+
+      final data = json.decode(response.body);
+
+      if (data['success'] == true) {
+        final profilesData = data['profiles'] as List;
         setState(() {
-          _profiles = profilesData
-              .map((json) => Profile.fromJson(json))
-              .where((profile) => profile.status == 'active')
-              .toList();
+          _profiles = profilesData.map((json) => Profile.fromJson(json)).toList();
           _isLoading = false;
         });
       } else {
         setState(() {
-          _errorMessage = response['message'] ?? 'Failed to load profiles';
+          _errorMessage = data['message'] ?? 'Failed to load profiles';
           _isLoading = false;
         });
       }
@@ -56,15 +104,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  List<Profile> get _filteredProfiles {
-    if (_selectedGender == 'All') {
-      return _profiles;
-    }
-    return _profiles.where((profile) {
-      return profile.basicDetails?.childGender?.toLowerCase() ==
-             _selectedGender.toLowerCase();
-    }).toList();
-  }
+  List<Profile> get _filteredProfiles => _profiles;
 
   @override
   Widget build(BuildContext context) {
@@ -74,6 +114,36 @@ class _HomeScreenState extends State<HomeScreen> {
           'Browse Profiles',
           style: GoogleFonts.poppins(
             fontWeight: FontWeight.w600,
+          ),
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(60),
+          child: Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: 'Search by name, profession, education...',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _searchController.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          _searchController.clear();
+                          _loadProfiles();
+                        },
+                      )
+                    : null,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(30),
+                  borderSide: BorderSide.none,
+                ),
+                filled: true,
+                fillColor: Colors.white,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              ),
+              onSubmitted: (_) => _loadProfiles(),
+            ),
           ),
         ),
         actions: [
@@ -632,48 +702,142 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _showFilterDialog() {
+    // Create temporary variables for the dialog
+    String tempGender = _selectedGender;
+    String tempCity = _selectedCity;
+    int? tempMinAge = _minAge;
+    int? tempMaxAge = _maxAge;
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(
-          'Filter Profiles',
-          style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              title: const Text('All'),
-              leading: Radio<String>(
-                value: 'All',
-                groupValue: _selectedGender,
-                onChanged: (value) {
-                  setState(() => _selectedGender = value!);
-                  Navigator.pop(context);
-                },
-              ),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(
+            'Filter Profiles',
+            style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Gender Filter
+                Text(
+                  'Gender',
+                  style: GoogleFonts.poppins(fontWeight: FontWeight.w500, fontSize: 14),
+                ),
+                Wrap(
+                  spacing: 8,
+                  children: ['All', 'Male', 'Female'].map((gender) {
+                    return ChoiceChip(
+                      label: Text(gender),
+                      selected: tempGender == gender,
+                      onSelected: (selected) {
+                        setDialogState(() {
+                          tempGender = gender;
+                        });
+                      },
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 16),
+
+                // City Filter
+                TextField(
+                  decoration: InputDecoration(
+                    labelText: 'City',
+                    hintText: 'e.g., Mumbai, Delhi',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  ),
+                  controller: TextEditingController(text: tempCity),
+                  onChanged: (value) {
+                    tempCity = value;
+                  },
+                ),
+                const SizedBox(height: 16),
+
+                // Age Range
+                Text(
+                  'Age Range',
+                  style: GoogleFonts.poppins(fontWeight: FontWeight.w500, fontSize: 14),
+                ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        decoration: InputDecoration(
+                          labelText: 'Min',
+                          hintText: '25',
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        ),
+                        keyboardType: TextInputType.number,
+                        controller: TextEditingController(
+                          text: tempMinAge?.toString() ?? '',
+                        ),
+                        onChanged: (value) {
+                          tempMinAge = int.tryParse(value);
+                        },
+                      ),
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 8),
+                      child: Text('to'),
+                    ),
+                    Expanded(
+                      child: TextField(
+                        decoration: InputDecoration(
+                          labelText: 'Max',
+                          hintText: '35',
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        ),
+                        keyboardType: TextInputType.number,
+                        controller: TextEditingController(
+                          text: tempMaxAge?.toString() ?? '',
+                        ),
+                        onChanged: (value) {
+                          tempMaxAge = int.tryParse(value);
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
-            ListTile(
-              title: const Text('Male'),
-              leading: Radio<String>(
-                value: 'Male',
-                groupValue: _selectedGender,
-                onChanged: (value) {
-                  setState(() => _selectedGender = value!);
-                  Navigator.pop(context);
-                },
-              ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                // Reset filters
+                setState(() {
+                  _selectedGender = 'All';
+                  _selectedCity = '';
+                  _minAge = null;
+                  _maxAge = null;
+                });
+                Navigator.pop(context);
+                _loadProfiles();
+              },
+              child: const Text('Reset'),
             ),
-            ListTile(
-              title: const Text('Female'),
-              leading: Radio<String>(
-                value: 'Female',
-                groupValue: _selectedGender,
-                onChanged: (value) {
-                  setState(() => _selectedGender = value!);
-                  Navigator.pop(context);
-                },
-              ),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                setState(() {
+                  _selectedGender = tempGender;
+                  _selectedCity = tempCity;
+                  _minAge = tempMinAge;
+                  _maxAge = tempMaxAge;
+                });
+                Navigator.pop(context);
+                _loadProfiles();
+              },
+              child: const Text('Apply'),
             ),
           ],
         ),

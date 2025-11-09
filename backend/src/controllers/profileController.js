@@ -183,13 +183,79 @@ exports.completeProfile = async (req, res) => {
   }
 };
 
-// @desc    Get all active profiles
-// @route   GET /api/profiles
+// @desc    Get all active profiles with search/filter
+// @route   GET /api/profiles?gender=Male&city=Mumbai&education=Graduate&minAge=25&maxAge=35&search=doctor
 // @access  Private
 exports.getAllProfiles = async (req, res) => {
   try {
+    const { gender, city, education, minAge, maxAge, search, religiousPractice, foodHabits } = req.query;
+
+    // Build where clause
+    const where = { status: 'active' };
+
+    // Gender filter
+    if (gender) {
+      where.childGender = { equals: gender, mode: 'insensitive' };
+    }
+
+    // City filter (matches both city and currentCity)
+    if (city) {
+      where.OR = [
+        { city: { contains: city, mode: 'insensitive' } },
+        { currentCity: { contains: city, mode: 'insensitive' } }
+      ];
+    }
+
+    // Education filter
+    if (education) {
+      where.education = { contains: education, mode: 'insensitive' };
+    }
+
+    // Religious practice filter
+    if (religiousPractice) {
+      where.religiousPractice = { contains: religiousPractice, mode: 'insensitive' };
+    }
+
+    // Food habits filter
+    if (foodHabits) {
+      where.foodHabits = { contains: foodHabits, mode: 'insensitive' };
+    }
+
+    // Age range filter
+    if (minAge || maxAge) {
+      const today = new Date();
+      if (minAge) {
+        const maxDate = new Date(today.getFullYear() - parseInt(minAge), today.getMonth(), today.getDate());
+        where.dateOfBirth = { ...where.dateOfBirth, lte: maxDate };
+      }
+      if (maxAge) {
+        const minDate = new Date(today.getFullYear() - parseInt(maxAge) - 1, today.getMonth(), today.getDate());
+        where.dateOfBirth = { ...where.dateOfBirth, gte: minDate };
+      }
+    }
+
+    // Text search (searches in name, profession, education)
+    if (search) {
+      const searchConditions = [
+        { childFullName: { contains: search, mode: 'insensitive' } },
+        { profession: { contains: search, mode: 'insensitive' } },
+        { education: { contains: search, mode: 'insensitive' } },
+        { lifeGoals: { contains: search, mode: 'insensitive' } }
+      ];
+
+      if (where.OR) {
+        where.AND = [
+          { OR: where.OR },
+          { OR: searchConditions }
+        ];
+        delete where.OR;
+      } else {
+        where.OR = searchConditions;
+      }
+    }
+
     const profiles = await prisma.profile.findMany({
-      where: { status: 'active' },
+      where,
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,
@@ -198,27 +264,58 @@ exports.getAllProfiles = async (req, res) => {
         childGender: true,
         dateOfBirth: true,
         city: true,
+        basicEducation: true,
         education: true,
         profession: true,
         currentCity: true,
         religiousPractice: true,
         foodHabits: true,
+        lifeGoals: true,
+        travelledPlaces: true,
+        photos: true,
         createdAt: true,
         completedAt: true
       }
     });
 
+    // Return as full profile objects with basicDetails and advancedDetails structure
+    const formattedProfiles = profiles.map(p => ({
+      id: p.id,
+      profileCode: p.profileCode,
+      status: 'active',
+      photos: p.photos || [],
+      basicDetails: {
+        childFullName: p.childFullName,
+        childGender: p.childGender,
+        dateOfBirth: p.dateOfBirth,
+        city: p.city,
+        basicEducation: p.basicEducation
+      },
+      advancedDetails: {
+        education: p.education,
+        profession: p.profession,
+        currentCity: p.currentCity,
+        religiousPractice: p.religiousPractice,
+        foodHabits: p.foodHabits,
+        lifeGoals: p.lifeGoals,
+        travelledPlaces: p.travelledPlaces
+      },
+      createdAt: p.createdAt,
+      completedAt: p.completedAt
+    }));
+
     res.status(200).json({
       success: true,
-      count: profiles.length,
-      profiles
+      count: formattedProfiles.length,
+      profiles: formattedProfiles
     });
 
   } catch (error) {
     console.error('Get All Profiles Error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to get profiles'
+      message: 'Failed to get profiles',
+      error: error.message
     });
   }
 };

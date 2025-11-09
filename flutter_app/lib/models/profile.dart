@@ -104,6 +104,7 @@ class Profile {
   final String shareableLink;
   final BasicDetails? basicDetails;
   final AdvancedDetails? advancedDetails;
+  final List<String>? photos;
   final String status;
   final DateTime? createdAt;
   final DateTime? completedAt;
@@ -114,6 +115,7 @@ class Profile {
     required this.shareableLink,
     this.basicDetails,
     this.advancedDetails,
+    this.photos,
     required this.status,
     this.createdAt,
     this.completedAt,
@@ -129,6 +131,9 @@ class Profile {
           : null,
       advancedDetails: json['advancedDetails'] != null
           ? AdvancedDetails.fromJson(json['advancedDetails'])
+          : null,
+      photos: json['photos'] != null
+          ? List<String>.from(json['photos'])
           : null,
       status: json['status'] ?? 'draft',
       createdAt: json['createdAt'] != null
@@ -147,6 +152,7 @@ class Profile {
       'shareableLink': shareableLink,
       'basicDetails': basicDetails?.toJson(),
       'advancedDetails': advancedDetails?.toJson(),
+      'photos': photos,
       'status': status,
       'createdAt': createdAt?.toIso8601String(),
       'completedAt': completedAt?.toIso8601String(),
