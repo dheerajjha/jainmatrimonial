@@ -2,11 +2,12 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/user.dart';
 import '../models/profile.dart';
+import '../config/app_config.dart';
 import 'storage_service.dart';
 
 class ApiService {
-  // Change this to your actual backend URL
-  static const String baseUrl = 'http://98.70.88.219:5000/api';
+  // Use configured backend URL from AppConfig
+  static String get baseUrl => AppConfig.apiUrl;
 
   // Auth methods
   static Future<Map<String, dynamic>> sendOTP(String phoneNumber, String role) async {
